@@ -22,6 +22,85 @@ export default function CadastroMotorista() {
 
   const atualizar = (campo) => (e) => setForm((f) => ({ ...f, [campo]: e.target.value }));
 
+  const criarPerfilSeNaoExistir = async (userId, accessToken) => {
+    // Verifica se já existe perfil de motorista pra esse usuário
+    const checkRes = await fetch(`${SUPABASE_URL}/rest/v1/motoristas?user_id=eq.${userId}&select=id`, {
+      headers: {
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    const existentes = await checkRes.json();
+
+    if (existentes.length > 0) {
+      return { criado: false, jaExistia: true };
+    }
+
+    const motoristaRes = await fetch(`${SUPABASE_URL}/rest/v1/motoristas`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        nome: form.nome,
+        telefone: form.telefone,
+        cnh_foto_url: "pendente",
+        moto_placa: form.placa.toUpperCase(),
+        moto_marca: form.marca,
+        moto_modelo: form.modelo,
+        moto_cor: form.cor,
+      }),
+    });
+
+    if (!motoristaRes.ok) {
+      const err = await motoristaRes.json();
+      throw new Error(err.message || "Login funcionou, mas o perfil de motorista falhou ao salvar.");
+    }
+
+    return { criado: true, jaExistia: false };
+  };
+
+  const entrar = async () => {
+    setEtapa("enviando");
+    setErroMsg("");
+
+    try {
+      const loginRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_KEY,
+        },
+        body: JSON.stringify({ email: form.email, password: form.senha }),
+      });
+
+      const loginData = await loginRes.json();
+
+      if (!loginRes.ok) {
+        throw new Error(loginData.error_description || loginData.msg || "Email ou senha incorretos");
+      }
+
+      const userId = loginData.user?.id;
+      const accessToken = loginData.access_token;
+
+      const resultado = await criarPerfilSeNaoExistir(userId, accessToken);
+
+      if (resultado.jaExistia) {
+        setErroMsg("");
+        setEtapa("sucesso");
+      } else {
+        setEtapa("sucesso");
+      }
+    } catch (err) {
+      setErroMsg(err.message);
+      setEtapa("erro");
+    }
+  };
+
   const cadastrar = async () => {
     setEtapa("enviando");
     setErroMsg("");
@@ -104,13 +183,30 @@ export default function CadastroMotorista() {
           </div>
           <div>
             <p style={{ fontWeight: 700, fontSize: 15, margin: 0 }}>Mototáxi Avaré</p>
-            <p style={{ fontSize: 11, color: "#9CA3AF", margin: 0 }}>Cadastro de motorista</p>
+            <p style={{ fontSize: 11, color: "#9CA3AF", margin: 0 }}>{modo === "cadastro" ? "Cadastro de motorista" : "Login de motorista"}</p>
           </div>
         </div>
       </div>
 
       <div style={{ padding: "0 24px 24px" }}>
         {etapa === "form" && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <button
+              onClick={() => setModo("cadastro")}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: modo === "cadastro" ? "#7C3AED" : "#1A1D29", color: modo === "cadastro" ? "#fff" : "#9CA3AF" }}
+            >
+              Criar cadastro
+            </button>
+            <button
+              onClick={() => setModo("login")}
+              style={{ flex: 1, padding: 8, borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, background: modo === "login" ? "#7C3AED" : "#1A1D29", color: modo === "login" ? "#fff" : "#9CA3AF" }}
+            >
+              Já tenho conta
+            </button>
+          </div>
+        )}
+
+        {etapa === "form" && modo === "cadastro" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <Campo icon={<User size={15} />} placeholder="Nome completo" value={form.nome} onChange={atualizar("nome")} />
             <Campo icon={<Phone size={15} />} placeholder="Telefone (WhatsApp)" value={form.telefone} onChange={atualizar("telefone")} />
@@ -133,6 +229,7 @@ export default function CadastroMotorista() {
               Foto da CNH será solicitada em uma etapa futura — ainda não está incluída neste formulário.
             </p>
 
+
             <button
               onClick={cadastrar}
               disabled={!camposValidos}
@@ -153,6 +250,31 @@ export default function CadastroMotorista() {
           </div>
         )}
 
+        {etapa === "form" && modo === "login" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Campo icon={<Mail size={15} />} placeholder="Email" type="email" value={form.email} onChange={atualizar("email")} />
+            <Campo icon={<Lock size={15} />} placeholder="Senha" type="password" value={form.senha} onChange={atualizar("senha")} />
+
+            <button
+              onClick={entrar}
+              disabled={!form.email || !form.senha}
+              style={{
+                marginTop: 8,
+                background: form.email && form.senha ? "#7C3AED" : "#2A2D3A",
+                color: form.email && form.senha ? "#fff" : "#6B7280",
+                border: "none",
+                borderRadius: 12,
+                padding: 14,
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: form.email && form.senha ? "pointer" : "not-allowed",
+              }}
+            >
+              Entrar
+            </button>
+          </div>
+        )}
+
         {etapa === "enviando" && (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
             <Loader2 size={28} color="#7C3AED" className="spin" />
@@ -164,9 +286,13 @@ export default function CadastroMotorista() {
         {etapa === "sucesso" && (
           <div style={{ textAlign: "center", padding: "32px 0" }}>
             <CheckCircle2 size={40} color="#22C55E" />
-            <p style={{ fontWeight: 600, fontSize: 15, marginTop: 12 }}>Cadastro criado</p>
+            <p style={{ fontWeight: 600, fontSize: 15, marginTop: 12 }}>
+              {modo === "login" ? "Login realizado" : "Cadastro criado"}
+            </p>
             <p style={{ fontSize: 12, color: "#9CA3AF", marginTop: 6, lineHeight: 1.6 }}>
-              Um email de confirmação foi enviado para <strong style={{ color: "#D1D5DB" }}>{form.email}</strong>. Confirme o email antes de tentar fazer login.
+              {modo === "login"
+                ? "Perfil de motorista confirmado no banco."
+                : <>Um email de confirmação foi enviado para <strong style={{ color: "#D1D5DB" }}>{form.email}</strong>. Confirme o email antes de tentar fazer login.</>}
             </p>
           </div>
         )}
