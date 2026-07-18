@@ -44,23 +44,28 @@ export default function CadastroMotorista() {
       }
 
       const userId = signupData.id || signupData.user?.id;
+      const accessToken = signupData.access_token;
 
       if (!userId) {
         throw new Error("Conta criada, mas não foi possível obter o ID do usuário.");
       }
 
-      // 2) Cria o registro na tabela `motoristas` vinculado ao user_id
-      // Nota: como a confirmação de email ainda não aconteceu, o usuário
-      // não tem sessão autenticada ainda — isso só funciona se a policy de
-      // insert em `motoristas` permitir insert público controlado, ou se
-      // você desabilitar a confirmação de email obrigatória no Supabase
-      // (Authentication > Settings) para este teste inicial.
+      if (!accessToken) {
+        throw new Error(
+          "Conta criada, mas sem sessão ativa — provavelmente a confirmação de email ainda está habilitada no Supabase. Desative 'Confirm email' em Authentication > Sign In / Providers para testes."
+        );
+      }
+
+      // 2) Cria o registro na tabela `motoristas` vinculado ao user_id.
+      // Importante: usa o access_token da sessão recém-criada (não a anon key)
+      // no header Authorization, porque a policy de RLS depende de auth.uid()
+      // reconhecer quem está fazendo a requisição.
       const motoristaRes = await fetch(`${SUPABASE_URL}/rest/v1/motoristas`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           apikey: SUPABASE_KEY,
-          Authorization: `Bearer ${SUPABASE_KEY}`,
+          Authorization: `Bearer ${accessToken}`,
           Prefer: "return=representation",
         },
         body: JSON.stringify({
