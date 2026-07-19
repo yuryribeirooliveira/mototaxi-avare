@@ -307,7 +307,7 @@ function PedirCorrida({ sessao }) {
         {destino && <Polyline positions={[origem, destino]} pathOptions={{ color: "#7C3AED", weight: 3, dashArray: "6 6" }} />}
       </MapContainer>
 
-      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "#1A1D29", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, zIndex: 1000 }}>
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "#1A1D29", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, zIndex: 1000, maxHeight: "70vh", overflowY: "auto" }}>
         {etapaCorrida === "escolhendo" && (
           <>
             <div style={{ position: "relative", marginBottom: destino ? 12 : 0 }}>
@@ -321,7 +321,7 @@ function PedirCorrida({ sessao }) {
                 />
               </div>
               {resultadosBusca.length > 0 && (
-                <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "#1A1D29", border: "1px solid #2A2D3A", borderRadius: 10, overflow: "hidden", zIndex: 1001 }}>
+                <div style={{ position: "absolute", bottom: "calc(100% + 4px)", left: 0, right: 0, background: "#1A1D29", border: "1px solid #2A2D3A", borderRadius: 10, overflow: "hidden", zIndex: 1001, maxHeight: 220, overflowY: "auto" }}>
                   {resultadosBusca.map((r, i) => (
                     <div
                       key={i}
@@ -380,6 +380,7 @@ function Campo({ icon, style, ...props }) {
 
 const containerStyle = {
   display: "flex",
+  flexDirection: "column",
   alignItems: "center",
   justifyContent: "center",
   minHeight: 400,
