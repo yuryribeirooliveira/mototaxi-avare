@@ -223,8 +223,15 @@ function PainelMotorista({ sessao }) {
   const [erroMsg, setErroMsg] = useState("");
   const pollRef = useRef(null);
 
+  useEffect(() => {
+    if (!erroMsg) return;
+    const t = setTimeout(() => setErroMsg(""), 5000);
+    return () => clearTimeout(t);
+  }, [erroMsg]);
+
   const alternarOnline = async () => {
     setAlternandoStatus(true);
+    setErroMsg("");
     const novoStatus = online ? "offline" : "online";
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/motoristas?id=eq.${sessao.motoristaId}`, {
