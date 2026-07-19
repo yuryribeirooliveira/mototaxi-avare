@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { MapContainer, TileLayer, Marker, Polyline, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import { MapPin, Navigation, Search, User, Mail, Lock, Phone, Loader2, CheckCircle2, AlertCircle, Radio } from "lucide-react";
 import "leaflet/dist/leaflet.css";
@@ -218,8 +218,17 @@ function AuthCliente({ onAutenticado }) {
 // ============================================================
 // TELA DE PEDIR CORRIDA — mapa + busca de destino + status
 // ============================================================
+function RecentralizarMapa({ origem }) {
+  const map = useMap();
+  useEffect(() => {
+    map.flyTo(origem, map.getZoom());
+  }, [origem]);
+  return null;
+}
+
 function PedirCorrida({ sessao }) {
-  const [origem] = useState(AVARE_CENTER); // simplificado: usa o centro de Avaré como origem fixa por enquanto
+  const [origem, setOrigem] = useState(AVARE_CENTER);
+  const [statusLocalizacao, setStatusLocalizacao] = useState("buscando"); // buscando | real | negada
   const [destino, setDestino] = useState(null);
   const [buscaTexto, setBuscaTexto] = useState("");
   const [resultadosBusca, setResultadosBusca] = useState([]);
@@ -227,6 +236,23 @@ function PedirCorrida({ sessao }) {
   const [etapaCorrida, setEtapaCorrida] = useState("escolhendo"); // escolhendo | buscando_motorista | erro
   const [erroMsg, setErroMsg] = useState("");
   const debounceRef = useRef(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setStatusLocalizacao("negada");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setOrigem([pos.coords.latitude, pos.coords.longitude]);
+        setStatusLocalizacao("real");
+      },
+      () => {
+        setStatusLocalizacao("negada");
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  }, []);
 
   // Busca de endereço via Nominatim (OpenStreetMap) — gratuito, sem chave de API
   const buscarEndereco = (texto) => {
@@ -253,6 +279,33 @@ function PedirCorrida({ sessao }) {
     setBuscaTexto(r.display_name);
     setResultadosBusca([]);
   };
+
+  const [corridaId, setCorridaId] = useState(null);
+  const [motoristaAceito, setMotoristaAceito] = useState(null);
+  const pollRef = useRef(null);
+
+  useEffect(() => {
+    if (!corridaId || etapaCorrida !== "buscando_motorista") return;
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `${SUPABASE_URL}/rest/v1/corridas?id=eq.${corridaId}&select=status,motorista_id,motoristas(nome,moto_placa,moto_marca,moto_modelo,moto_cor,avaliacao_media)`,
+          { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${sessao.accessToken}` } }
+        );
+        const data = await res.json();
+        if (data[0] && data[0].status === "aceito") {
+          setMotoristaAceito(data[0].motoristas);
+          setEtapaCorrida("aceito");
+          clearInterval(pollRef.current);
+        }
+      } catch {
+        // silencioso: próxima tentativa do polling cobre falhas pontuais de rede
+      }
+    }, 3000);
+
+    return () => clearInterval(pollRef.current);
+  }, [corridaId, etapaCorrida]);
 
   const pedirCorrida = async () => {
     if (!destino) return;
@@ -283,6 +336,9 @@ function PedirCorrida({ sessao }) {
         const err = await res.json();
         throw new Error(err.message || "Não foi possível pedir a corrida");
       }
+
+      const criada = await res.json();
+      setCorridaId(criada[0].id);
     } catch (err) {
       setErroMsg(err.message);
       setEtapaCorrida("erro");
@@ -291,13 +347,25 @@ function PedirCorrida({ sessao }) {
 
   return (
     <div style={{ position: "relative", width: "100%", height: 600, maxWidth: 420, margin: "0 auto", borderRadius: 20, overflow: "hidden", background: "#0F1115" }}>
+      <style>{`.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 1000, padding: 16 }}>
         <div style={{ background: "#7C3AED", color: "#fff", padding: "8px 16px", borderRadius: 20, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
           <MapPin size={14} /> Mototáxi Avaré
         </div>
+        {statusLocalizacao === "buscando" && (
+          <div style={{ marginTop: 8, background: "#1A1D29", color: "#9CA3AF", padding: "6px 12px", borderRadius: 16, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+            <Loader2 size={12} className="spin" /> Localizando você...
+          </div>
+        )}
+        {statusLocalizacao === "negada" && (
+          <div style={{ marginTop: 8, background: "#1A1D29", color: "#F59E0B", padding: "6px 12px", borderRadius: 16, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+            <AlertCircle size={12} /> Localização indisponível — usando centro de Avaré
+          </div>
+        )}
       </div>
 
       <MapContainer center={origem} zoom={14} style={{ height: "100%", width: "100%" }} zoomControl={false}>
+        <RecentralizarMapa origem={origem} />
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; OpenStreetMap contributors'
@@ -351,7 +419,31 @@ function PedirCorrida({ sessao }) {
             <Radio size={26} color="#7C3AED" className="pulse" />
             <p style={{ fontWeight: 600, fontSize: 14, marginTop: 10 }}>Buscando motorista...</p>
             <p style={{ fontSize: 11, color: "#9CA3AF", marginTop: 4 }}>Corrida registrada. Aguardando um motorista aceitar.</p>
-            <style>{`.pulse { animation: pulse 1.2s ease-in-out infinite; } @keyframes pulse { 0%,100% { opacity:1; transform:scale(1);} 50% {opacity:.5; transform:scale(1.15);} }`}</style>
+            <style>{`.pulse { animation: pulse 1.2s ease-in-out infinite; } @keyframes pulse { 0%,100% { opacity:1; transform:scale(1);} 50% {opacity:.5; transform:scale(1.15);} } .spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        )}
+
+        {etapaCorrida === "aceito" && motoristaAceito && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 14, color: "#22C55E" }}>
+              <CheckCircle2 size={16} />
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Motorista a caminho</span>
+            </div>
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: "#7C3AED22", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Navigation size={20} color="#7C3AED" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontWeight: 600, fontSize: 14, margin: 0 }}>{motoristaAceito.nome}</p>
+                <p style={{ fontSize: 12, color: "#9CA3AF", margin: "2px 0 0" }}>
+                  {motoristaAceito.moto_marca} {motoristaAceito.moto_modelo} · {motoristaAceito.moto_cor}
+                </p>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <p style={{ fontWeight: 700, fontSize: 15, margin: 0, letterSpacing: 0.5 }}>{motoristaAceito.moto_placa}</p>
+                <p style={{ fontSize: 11, color: "#9CA3AF", margin: 0 }}>★ {motoristaAceito.avaliacao_media}</p>
+              </div>
+            </div>
           </div>
         )}
 
